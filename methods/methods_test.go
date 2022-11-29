@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"moon/models"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/jmoiron/sqlx"
@@ -15,8 +17,20 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const (
+	host                = "localhost"
+	port                = 6616
+	username            = "postgres"
+	password            = "postgres"
+	database            = "postgres"
+	sslmode             = "disable"
+	version             = "14.5.0"
+	startTimeout        = 15 * time.Second
+	binaryRepositoryURL = "https://repo1.maven.org/maven2"
+)
+
 func ConnectToDB() *sqlx.DB {
-	db, err := sqlx.Connect("postgres", "host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable")
+	db, err := sqlx.Connect("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s", host, port, username, password, database, sslmode))
 	if err != nil {
 		log.Fatal("Failed to connect to database.")
 	}
@@ -25,86 +39,53 @@ func ConnectToDB() *sqlx.DB {
 
 type TestSuite struct {
 	suite.Suite
+	db *sqlx.DB
 }
 
-func (suite *TestSuite) BeforeTest() (*embeddedpostgres.EmbeddedPostgres, *sqlx.DB) {
-	postgres := embeddedpostgres.NewDatabase(embeddedpostgres.DefaultConfig())
-	if err := postgres.Start(); err != nil {
-		fmt.Println("Failed to migrate data into database", err.Error())
-	}
-
-	db, err := sqlx.Connect("postgres", "host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable")
-	if err != nil {
-		log.Fatal("Failed to connect to database.")
-	}
-
-	if err := goose.Up(db.DB, "../migrations"); err != nil {
-		fmt.Println("Failed to migrate data into database", err.Error())
-	}
-
-	return postgres, db
-}
-
-func (suite *TestSuite) AfterTest(postgres *embeddedpostgres.EmbeddedPostgres, db *sqlx.DB) {
-	if err := db.Close(); err != nil {
-		log.Fatalln("Failed to close database connection.", err.Error())
-	}
-
-	if err := postgres.Stop(); err != nil {
-		log.Fatalln("Failed to stop postgreSQL embded driver.", err.Error())
+func (suite *TestSuite) FillTables() {
+	if err := goose.Up(suite.db.DB, "../refresh"); err != nil {
+		fmt.Println("Failed to refresh data into database")
+		return
 	}
 }
 
 func (suite *TestSuite) TestShouldSuccessfullyGetRowsFromAstroCatalogueTable() {
-	postgres, db := suite.BeforeTest()
-
 	expect := []models.AstroCatalogueTableRow{
 		{Name: "Mercury"},
 		{Name: "Venus"},
 		{Name: "Earth"},
 	}
 
-	data := GetRowsFromAstroCatalogueTable(db)
+	data := GetRowsFromAstroCatalogueTable(suite.db)
 
 	assert.Equal(suite.T(), len(expect), len(data))
 	for _, row := range data {
 		fmt.Println(row)
 		assert.Equal(suite.T(), true, slices.Contains(expect, models.AstroCatalogueTableRow{Name: row.Name}))
 	}
-
-	suite.AfterTest(postgres, db)
 }
 
 func (suite *TestSuite) TestShouldFailToGetRowsFromAstroCatalogueTableDueToExpectMoreDataInTheTable() {
-	postgres, db := suite.BeforeTest()
-
 	expect := []models.AstroCatalogueTableRow{
 		{Name: "Mercury"},
 		{Name: "Venus"},
 		{Name: "Earth"},
 		{Name: "Mars"},
 	}
-	data := GetRowsFromAstroCatalogueTable(db)
 
-	for _, v := range data {
-		fmt.Println(v)
-	}
+	data := GetRowsFromAstroCatalogueTable(suite.db)
 
 	assert.NotEqual(suite.T(), len(expect), len(data))
-
-	suite.AfterTest(postgres, db)
 }
 
 func (suite *TestSuite) TestShouldFailToGetRowsFromAstroCatalogueTableDueToAbsenceSomeInformation() {
-	postgres, db := suite.BeforeTest()
-
 	expect := []models.AstroCatalogueTableRow{
 		{Name: "Mercury"},
 		{Name: "Venus"},
 		{Name: "Mars"},
 	}
 
-	data := GetRowsFromAstroCatalogueTable(db)
+	data := GetRowsFromAstroCatalogueTable(suite.db)
 
 	assert.Equal(suite.T(), len(expect), len(data))
 	for _, row := range data {
@@ -112,66 +93,71 @@ func (suite *TestSuite) TestShouldFailToGetRowsFromAstroCatalogueTableDueToAbsen
 			assert.Equal(suite.T(), false, false)
 		}
 	}
-
-	suite.AfterTest(postgres, db)
 }
 
 func (suite *TestSuite) TestShouldSuccessfullyToGetRowFromAstroCatalogueTableByName() {
-	postgres, db := suite.BeforeTest()
-
 	expect := models.AstroCatalogueTableRow{Name: "Earth"}
 
-	data := GetRowFromAstroCatalogueTableByName(db, expect.Name)
+	data := GetRowFromAstroCatalogueTableByName(suite.db, expect.Name)
 	assert.Equal(suite.T(), expect.Name, data.Name)
-
-	suite.AfterTest(postgres, db)
 }
 
 func (suite *TestSuite) TestShouldSuccessfullyToGetRowFromAstroCatalogueTableByNameInLowerCase() {
-	postgres, db := suite.BeforeTest()
-
 	expect := models.AstroCatalogueTableRow{Name: "Earth"}
 
-	data := GetRowFromAstroCatalogueTableByName(db, strings.ToLower(expect.Name))
+	data := GetRowFromAstroCatalogueTableByName(suite.db, strings.ToLower(expect.Name))
 	assert.Equal(suite.T(), expect.Name, data.Name)
-
-	suite.AfterTest(postgres, db)
 }
 
 func (suite *TestSuite) TestShouldFailToGetRowFromAstroCatalogueTableByNameDueToAbsenceRecordInTable() {
-	postgres, db := suite.BeforeTest()
+	suite.FillTables()
 
 	expect := models.AstroCatalogueTableRow{Name: "Mars"}
 
-	data := GetRowFromAstroCatalogueTableByName(db, expect.Name)
+	data := GetRowFromAstroCatalogueTableByName(suite.db, expect.Name)
 	assert.NotEqual(suite.T(), expect.Name, data.Name)
-
-	suite.AfterTest(postgres, db)
 }
 
 func (suite *TestSuite) TestShouldSuccessfullyAddPlanetToAstroCatalogueTable() {
-	postgres, db := suite.BeforeTest()
-
 	expect := models.AstroCatalogueTableRow{Name: "Mars"}
 
-	data := AddPlanetToAstroCatalogueTable(db, expect.Name)
+	data := AddPlanetToAstroCatalogueTable(suite.db, expect.Name)
+	assert.NotEqual(suite.T(), true, data)
 
-	assert.Equal(suite.T(), true, data)
-
-	suite.AfterTest(postgres, db)
+	command := "DELETE FROM astro_catalogue WHERE name=$1;"
+	suite.db.Exec(command, "Mars")
 }
 
 func (suite *TestSuite) TestShouldFailToAddPlanetToAstroCatalogueTableDueToAlreadyExistingPlanetInTheTable() {
-	postgres, db := suite.BeforeTest()
-
 	expect := models.AstroCatalogueTableRow{Name: "Earth"}
 
-	data := AddPlanetToAstroCatalogueTable(db, expect.Name)
+	data := AddPlanetToAstroCatalogueTable(suite.db, expect.Name)
 	assert.Equal(suite.T(), false, data)
+}
 
-	suite.AfterTest(postgres, db)
+func (suite *TestSuite) SetupTest() {
+	suite.db = ConnectToDB()
+	if err := goose.Up(suite.db.DB, "../migrations"); err != nil {
+		fmt.Println("Failed to migrate data into database")
+		return
+	}
+	suite.FillTables()
+}
+
+func (suite *TestSuite) TearDownTest() {
+	suite.FillTables()
+}
+
+func GenerateConfig() embeddedpostgres.Config {
+	config := embeddedpostgres.DefaultConfig().Port(port).Version(version).Database(database).Username(username).Password(password).StartTimeout(startTimeout).Logger(os.Stdout).BinaryRepositoryURL(binaryRepositoryURL)
+	return config
 }
 
 func TestExampleTestSuite(t *testing.T) {
-	suite.Run(t, new(TestSuite))
+	postgres := embeddedpostgres.NewDatabase(GenerateConfig())
+	postgres.Start()
+	newSuite := new(TestSuite)
+	newSuite.SetupTest()
+	suite.Run(t, newSuite)
+	postgres.Stop()
 }
