@@ -13,8 +13,4 @@ ALTER TABLE astro_catalogue ADD CONSTRAINT primary_key_unique_pair PRIMARY KEY (
 
 CREATE INDEX name_of_index ON astro_catalogue(lower(name));
 
-INSERT INTO astro_catalogue (name) VALUES ('Mercury');
-INSERT INTO astro_catalogue (name) VALUES ('Venus');
-INSERT INTO astro_catalogue (name) VALUES ('Earth');
-
 -- +goose Down

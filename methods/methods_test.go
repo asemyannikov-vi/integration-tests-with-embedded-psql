@@ -43,7 +43,7 @@ type TestSuite struct {
 }
 
 func (suite *TestSuite) FillTables() {
-	if err := goose.Up(suite.db.DB, "../refresh"); err != nil {
+	if err := goose.Up(suite.db.DB, "../migrations/data"); err != nil {
 		fmt.Println("Failed to refresh data into database")
 		return
 	}

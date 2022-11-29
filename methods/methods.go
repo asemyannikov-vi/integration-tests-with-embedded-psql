@@ -11,7 +11,7 @@ import (
 const (
 	getAllRowsFromAstroCatalogueTable   = "SELECT * FROM astro_catalogue;"
 	getRowFromAstroCatalogueTableByName = "SELECT * FROM astro_catalogue WHERE astro_catalogue.name ~* :name;"
-	addPlanetToAstroCatalogueTable      = "INSERT INTO astro_catalogue (name) VALUES (:name) RETURNING id;"
+	addPlanetToAstroCatalogueTable      = "INSERT INTO astro_catalogue (name) VALUES (:name);"
 )
 
 func GetRowsFromAstroCatalogueTable(db *sqlx.DB) []models.AstroCatalogueTableRow {
@@ -46,7 +46,7 @@ func AddPlanetToAstroCatalogueTable(db *sqlx.DB, name string) bool {
 		return false
 	}
 	if err != sql.ErrNoRows {
-		return true
+		return false
 	}
-	return false
+	return true
 }
