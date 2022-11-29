@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"moon/models"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -42,13 +41,6 @@ type TestSuite struct {
 	db *sqlx.DB
 }
 
-func (suite *TestSuite) FillTables() {
-	if err := goose.Up(suite.db.DB, "../migrations/data"); err != nil {
-		fmt.Println("Failed to refresh data into database")
-		return
-	}
-}
-
 func (suite *TestSuite) TestShouldSuccessfullyGetRowsFromAstroCatalogueTable() {
 	expect := []models.AstroCatalogueTableRow{
 		{Name: "Mercury"},
@@ -60,7 +52,6 @@ func (suite *TestSuite) TestShouldSuccessfullyGetRowsFromAstroCatalogueTable() {
 
 	assert.Equal(suite.T(), len(expect), len(data))
 	for _, row := range data {
-		fmt.Println(row)
 		assert.Equal(suite.T(), true, slices.Contains(expect, models.AstroCatalogueTableRow{Name: row.Name}))
 	}
 }
@@ -135,29 +126,42 @@ func (suite *TestSuite) TestShouldFailToAddPlanetToAstroCatalogueTableDueToAlrea
 	assert.Equal(suite.T(), false, data)
 }
 
-func (suite *TestSuite) SetupTest() {
-	suite.db = ConnectToDB()
-	if err := goose.Up(suite.db.DB, "../migrations"); err != nil {
-		fmt.Println("Failed to migrate data into database")
+func (suite *TestSuite) FillTables() {
+	if err := goose.Up(suite.db.DB, "./fill"); err != nil {
+		fmt.Println("Failed to fill table")
 		return
 	}
+}
+
+func (suite *TestSuite) CleanTables() {
+	if err := goose.Up(suite.db.DB, "./clean"); err != nil {
+		fmt.Println("Failed to clean table")
+		return
+	}
+}
+
+func (suite *TestSuite) SetupTest() {
 	suite.FillTables()
 }
 
 func (suite *TestSuite) TearDownTest() {
-	suite.FillTables()
+	suite.CleanTables()
 }
 
 func GenerateConfig() embeddedpostgres.Config {
-	config := embeddedpostgres.DefaultConfig().Port(port).Version(version).Database(database).Username(username).Password(password).StartTimeout(startTimeout).Logger(os.Stdout).BinaryRepositoryURL(binaryRepositoryURL)
+	config := embeddedpostgres.DefaultConfig().Port(port).Version(version).Database(database).Username(username).Password(password).StartTimeout(startTimeout).Logger(nil).BinaryRepositoryURL(binaryRepositoryURL)
 	return config
 }
 
-func TestExampleTestSuite(t *testing.T) {
+func TestAstroSuite(t *testing.T) {
 	postgres := embeddedpostgres.NewDatabase(GenerateConfig())
 	postgres.Start()
 	newSuite := new(TestSuite)
-	newSuite.SetupTest()
+	newSuite.db = ConnectToDB()
+	if err := goose.Up(newSuite.db.DB, "../migrations"); err != nil {
+		fmt.Println("Failed to prepare table")
+		return
+	}
 	suite.Run(t, newSuite)
 	postgres.Stop()
 }
